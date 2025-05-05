@@ -342,4 +342,236 @@ Auth is handled via Supabase JWT sessions. Each API call resolves `auth.uid()`.
 
 ---
 
-Would you like this exported as a `.sql` or `.md` file for Supabase Studio or GitHub documentation?
+# Supabase SaaS Layer Scope - v2
+
+## Overview
+
+This Supabase SaaS Layer provides a robust foundation for developers and product owners to kickstart their business ideas without having to build common SaaS infrastructure from scratch. It includes core modules like multi-tenancy, feature bundling, subscription management, permissions/roles, and RLS policies.
+
+## Core Modules
+
+### Features
+
+Business-specific features that are made available to tenants via packages.
+
+* **Feature**: Represents a business capability.
+* **Resource**: Represents business objects under the feature.
+* **Action**: Defines what operations are allowed on each resource.
+
+### Packages
+
+Packages bundle features into subscription types and define limits.
+
+* **Features**: Set of features included in the package.
+* **Limits**: Constraints like rate limits, quotas.
+* **Users Limit**: Max number of users per tenant.
+
+### Tenants
+
+Team Admins sign up and are associated with a subscription package.
+
+* **Tenant**: Represents an organization or team.
+* **Package**: Assigned subscription type.
+* **Roles & Permissions**: Team Admins can create roles and set permissions to features and actions.
+
+---
+
+## Database Schema (SQL Migrations)
+
+```sql
+-- Features Table
+create table features (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  description text,
+  created_at timestamp with time zone default now()
+);
+
+-- Resources Table
+create table resources (
+  id uuid primary key default gen_random_uuid(),
+  feature_id uuid references features(id) on delete cascade,
+  name text not null,
+  created_at timestamp with time zone default now()
+);
+
+-- Actions Table
+create table actions (
+  id uuid primary key default gen_random_uuid(),
+  resource_id uuid references resources(id) on delete cascade,
+  name text not null,
+  created_at timestamp with time zone default now()
+);
+
+-- Packages Table
+create table packages (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  description text,
+  user_limit int,
+  rate_limit int,
+  created_at timestamp with time zone default now()
+);
+
+-- Package Features Table
+create table package_features (
+  id uuid primary key default gen_random_uuid(),
+  package_id uuid references packages(id) on delete cascade,
+  feature_id uuid references features(id) on delete cascade
+);
+
+-- Tenants Table
+create table tenants (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  package_id uuid references packages(id),
+  created_at timestamp with time zone default now()
+);
+
+-- Roles Table
+create table roles (
+  id uuid primary key default gen_random_uuid(),
+  tenant_id uuid references tenants(id) on delete cascade,
+  name text not null,
+  created_at timestamp with time zone default now()
+);
+
+-- Role Permissions Table
+create table role_permissions (
+  id uuid primary key default gen_random_uuid(),
+  role_id uuid references roles(id) on delete cascade,
+  action_id uuid references actions(id),
+  allow boolean default true,
+  created_at timestamp with time zone default now()
+);
+
+-- Users Table (mapped to auth.users)
+create table profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  tenant_id uuid references tenants(id) on delete cascade,
+  role_id uuid references roles(id),
+  created_at timestamp with time zone default now()
+);
+```
+
+---
+
+## Supabase RLS Policies
+
+```sql
+-- Enable RLS on all tenant-based tables
+alter table tenants enable row level security;
+alter table roles enable row level security;
+alter table role_permissions enable row level security;
+alter table profiles enable row level security;
+
+-- Example RLS Policy for Profiles
+create policy "Users can view/edit their profile" on profiles
+  for all
+  using (auth.uid() = id);
+
+-- RLS for tenant-scoped resources
+create policy "Tenant members only" on roles
+  for all
+  using (exists (
+    select 1 from profiles p where p.id = auth.uid() and p.tenant_id = roles.tenant_id
+  ));
+
+-- Repeat similar policies for other tables like tenants, role_permissions, etc.
+```
+
+---
+
+## Landing Page Copywriting
+
+### Headline:
+
+**Build SaaS Faster with a Complete Supabase Layer**
+
+### Subheadline:
+
+Everything you need—multi-tenancy, roles, subscriptions, permissions, and APIs. No boilerplate.
+
+### Features Section:
+
+* ⚡ Instant Multi-Tenancy Setup
+* 🔐 Role & Permission Control
+* 🧩 Feature & Subscription Bundling
+* 🚀 RLS Security Pre-configured
+* 📦 Ready-to-Use Supabase Migrations
+
+### CTA Buttons:
+
+* **Get Started for Free**
+* **View Developer Docs**
+
+---
+
+## Developer Docs
+
+### 📘 Getting Started
+
+#### 1. Clone the SaaS Layer
+
+```bash
+git clone https://github.com/your-org/supabase-saas-layer
+cd supabase-saas-layer
+```
+
+#### 2. Deploy Supabase Project
+
+Set up a Supabase project and link `.env` with your credentials.
+
+#### 3. Run Migrations
+
+```bash
+supabase db push
+```
+
+#### 4. Setup RLS
+
+Ensure RLS is enabled via Supabase dashboard or CLI.
+
+#### 5. Use Auth
+
+Signup/Login through Supabase Auth and link users to tenant via `profiles` table.
+
+---
+
+### 🧩 Customizing Features
+
+1. Add features and resources in `features` and `resources` tables.
+2. Define allowed actions.
+3. Bundle them into a `package`.
+
+---
+
+### 🛠️ Assigning Roles and Permissions
+
+Admins can create roles and map them to actions using `role_permissions`.
+
+Use Supabase APIs to fetch feature-action matrix and apply permissions client-side or via edge functions.
+
+---
+
+### 🌐 API Interface (Examples)
+
+#### GET /api/features
+
+Returns features allowed for logged-in user.
+
+#### POST /api/tenants
+
+Creates a new tenant and links the user as Admin.
+
+#### POST /api/roles
+
+Creates role for tenant.
+
+---
+
+This setup provides a scalable foundation to build modern SaaS apps securely and rapidly.
+
+---
+
+Let me know if you'd like to generate this as a downloadable GitHub repo or PDF.
